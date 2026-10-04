@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Worth-It Tier List</title>
+<style>
+:root{--bg:#fafaf7;--fg:#1b1b18;--mut:#6b6b63;--card:#fff;--line:#e2e1da;--acc:#2f5fd0;
+--S:#d4a017;--A:#2e9e5b;--B:#2f7fd0;--C:#d0762f;--D:#b8433f}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#15150f;--fg:#ecebe3;--mut:#9a9a8f;--card:#1e1e17;--line:#33332a;--acc:#7da2ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:24px 16px 64px}
+main{max-width:980px;margin:0 auto}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 10px}
+p.sub{color:var(--mut);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:3px}
+input,select{width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:760px}
+th,td{padding:6px 5px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;color:var(--mut);font-weight:600}
+td input,td select{min-width:70px}
+td.name input{min-width:130px}
+.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+button{padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);font:inherit;cursor:pointer}
+button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+button.x{padding:3px 8px;color:var(--mut)}
+.tier{display:flex;gap:10px;align-items:stretch;margin-bottom:8px}
+.tier .lab{width:54px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff}
+.tier .items{flex:1;display:flex;flex-wrap:wrap;gap:8px;padding:8px;border:1px dashed var(--line);border-radius:8px;min-height:54px;align-items:center}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:13px}
+.chip small{color:var(--mut)}
+code{background:var(--card);border:1px solid var(--line);padding:1px 5px;border-radius:4px}
+.note{color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<h1>Model Worth-It Tier List</h1>
+<p class="sub">Seberapa worth it sebuah model berdasarkan <b>akurasi</b> dan <b>limit pemakaian</b> pada paket sekitar $20/bulan.</p>
+
+<div class="card">
+<b>Rumus</b><br>
+<code>Tugas sukses/bln = Limit tugas/bln × Akurasi^α</code> &nbsp;
+<code>Worth = Tugas sukses ÷ Harga</code> &nbsp;
+<code>Skor = Worth ÷ Worth tertinggi × 100</code>
+<p class="note" style="margin:8px 0 0">Angka di tabel adalah <b>contoh karangan</b> supaya kamu bisa melihat cara kerjanya. Ganti dengan akurasi dan limit asli dari benchmark atau pengalamanmu sendiri.</p>
+</div>
+
+<h2>Pengaturan</h2>
+<div class="grid">
+<div><label>α (bobot akurasi; 1 = normal, 2 = hukum akurasi rendah)</label><input id="alpha" type="number" step="0.1" min="0" value="1"></div>
+<div><label>Sesi 5-jam per bulan (untuk limit "per 5 jam")</label><input id="sessions" type="number" min="1" value="60"></div>
+<div><label>Biaya perbaikan per tugas gagal ($, opsional)</label><input id="fixcost" type="number" step="0.01" min="0" value="0"></div>
+</div>
+
+<h2>Model</h2>
+<div class="tbl card">
+<table>
+<thead><tr><th>Nama</th><th>Akurasi %</th><th>Limit pesan</th><th>Per</th><th>Pesan/tugas</th><th>Harga $/bln</th><th>Tugas/bln</th><th>Sukses/bln</th><th>$/sukses</th><th>Skor</th><th>Tier</th><th></th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+</div>
+<p><button class="primary" id="add">+ Tambah model</button> <button id="reset">Reset contoh</button></p>
+
+<h2>Batas tier (skor minimum)</h2>
+<div class="grid" id="cuts"></div>
+
+<h2>Tier list</h2>
+<div id="tiers"></div>
+</main>
+
+<script>
+const KEY="worthit-v1";
+const DEF={alpha:1,sessions:60,fixcost:0,cuts:{S:85,A:65,B:45,C:25},
+models:[
+{n:"Model X (pintar, limit kecil)",acc:85,lim:45,per:"5h",mpt:5,price:20},
+{n:"Model Y (menengah, limit besar)",acc:70,lim:100,per:"5h",mpt:5,price:20},
+{n:"Model Z (ringan, limit sangat besar)",acc:55,lim:300,per:"5h",mpt:5,price:20}]};
+const MULT={"5h":null,day:30,week:4.33,month:1};
+let st;
+try{st=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!st)st=JSON.parse(JSON.stringify(DEF));
+const $=id=>document.getElementById(id);
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}};
+const f=(x,d=1)=>isFinite(x)?x.toLocaleString("id-ID",{maximumFractionDigits:d}):"–";
+const COL={S:"var(--S)",A:"var(--A)",B:"var(--B)",C:"var(--C)",D:"var(--D)"};
+
+function calc(m){
+ const mult=m.per==="5h"?st.sessions:MULT[m.per];
+ const tasks=(m.lim*mult)/Math.max(m.mpt,0.0001);
+ const acc=Math.min(Math.max(m.acc,0),100)/100;
+ const succ=tasks*Math.pow(acc,st.alpha);
+ const fail=tasks*(1-acc);
+ const cost=m.price+fail*st.fixcost;
+ return{tasks,succ,cost,worth:succ/Math.max(cost,0.0001),per:cost/Math.max(succ,0.0001)};
+}
+function tierOf(s){const c=st.cuts;return s>=c.S?"S":s>=c.A?"A":s>=c.B?"B":s>=c.C?"C":"D"}
+
+function render(){
+ $("alpha").value=st.alpha;$("sessions").value=st.sessions;$("fixcost").value=st.fixcost;
+ const res=st.models.map(calc);
+ const max=Math.max(...res.map(r=>r.worth),1e-9);
+ const tb=$("rows");tb.innerHTML="";
+ st.models.forEach((m,i)=>{
+  const r=res[i],sc=r.worth/max*100,t=tierOf(sc);
+  r.sc=sc;r.t=t;
+  const tr=document.createElement("tr");
+  tr.innerHTML=`<td class="name"><input data-i="${i}" data-k="n" value="${m.n.replace(/"/g,"&quot;")}"></td>
+  <td><input type="number" min="0" max="100" data-i="${i}" data-k="acc" value="${m.acc}"></td>
+  <td><input type="number" min="0" data-i="${i}" data-k="lim" value="${m.lim}"></td>
+  <td><select data-i="${i}" data-k="per">${[["5h","5 jam"],["day","hari"],["week","minggu"],["month","bulan"]].map(([v,l])=>`<option value="${v}"${m.per===v?" selected":""}>${l}</option>`).join("")}</select></td>
+  <td><input type="number" min="0.1" step="0.5" data-i="${i}" data-k="mpt" value="${m.mpt}"></td>
+  <td><input type="number" min="0" data-i="${i}" data-k="price" value="${m.price}"></td>
+  <td class="num">${f(r.tasks,0)}</td><td class="num">${f(r.succ,0)}</td><td class="num">$${f(r.per,3)}</td>
+  <td class="num"><b>${f(sc,0)}</b></td>
+  <td><b style="color:${COL[t]}">${t}</b></td>
+  <td><button class="x" data-del="${i}" title="Hapus">✕</button></td>`;
+  tb.appendChild(tr);
+ });
+ $("cuts").innerHTML=["S","A","B","C"].map(k=>`<div><label>Tier ${k} jika skor ≥</label><input type="number" data-cut="${k}" value="${st.cuts[k]}"></div>`).join("")+`<div><label>Tier D</label><input disabled value="di bawah C"></div>`;
+ const tw=$("tiers");tw.innerHTML="";
+ ["S","A","B","C","D"].forEach(t=>{
+  const items=st.models.map((m,i)=>({m,r:res[i]})).filter(x=>x.r.t===t).sort((a,b)=>b.r.sc-a.r.sc);
+  const d=document.createElement("div");d.className="tier";
+  d.innerHTML=`<div class="lab" style="background:${COL[t]}">${t}</div><div class="items">${items.map(x=>`<span class="chip">${x.m.n} <small>${f(x.r.sc,0)} · $${f(x.r.per,2)}/sukses</small></span>`).join("")||'<span class="note">kosong</span>'}</div>`;
+  tw.appendChild(d);
+ });
+}
+document.addEventListener("change",e=>{
+ const t=e.target;
+ if(t.dataset.k){const m=st.models[t.dataset.i],k=t.dataset.k;m[k]=(k==="n"||k==="per")?t.value:parseFloat(t.value)||0}
+ else if(t.dataset.cut)st.cuts[t.dataset.cut]=parseFloat(t.value)||0;
+ else if(t.id==="alpha")st.alpha=parseFloat(t.value)||0;
+ else if(t.id==="sessions")st.sessions=parseFloat(t.value)||1;
+ else if(t.id==="fixcost")st.fixcost=parseFloat(t.value)||0;
+ else return;
+ save();render();
+});
+document.addEventListener("click",e=>{
+ if(e.target.dataset.del!==undefined){st.models.splice(+e.target.dataset.del,1);save();render()}
+});
+$("add").onclick=()=>{st.models.push({n:"Model baru",acc:70,lim:100,per:"5h",mpt:5,price:20});save();render()};
+$("reset").onclick=()=>{st=JSON.parse(JSON.stringify(DEF));save();render()};
+render();
+</script>
+</body>
+</html>
